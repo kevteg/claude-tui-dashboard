@@ -1,5 +1,5 @@
 {
-  "name": "claude-terminal-dashboard",
+  "name": "claude-tui-dashboard",
   "owner": { "name": "kevteg" },
-  "plugins": [{ "name": "terminal-dashboard", "source": "./" }]
+  "plugins": [{ "name": "tui-dashboard", "source": "./" }]
 }

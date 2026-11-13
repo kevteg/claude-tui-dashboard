@@ -7,16 +7,16 @@ const PANE = 'dashboard'
 const TOOL = 'render_dashboard'
 // Change the tag when Dashboard's fields change: it declines what an earlier
 // version stored, which outlives a reload.
-const dashboard = atom({ plugin: 'terminal-dashboard', key: 'dashboard' } as const, null, {
+const dashboard = atom({ plugin: 'tui-dashboard', key: 'dashboard' } as const, null, {
   shape: 'dashboard-1',
 })
 
 const refreshState = atom(
-  { plugin: 'terminal-dashboard', key: 'refresh' } as const,
+  { plugin: 'tui-dashboard', key: 'refresh' } as const,
   { approved: null, lastRunAt: 0, lastError: null, isRunning: false } as RefreshState,
   { shape: 'refresh-1' },
 )
-const lastSaved = atom({ plugin: 'terminal-dashboard', key: 'lastSaved' } as const, null, {
+const lastSaved = atom({ plugin: 'tui-dashboard', key: 'lastSaved' } as const, null, {
   shape: 'last-saved-1',
 })
 const SAVED_PREFIX = 'saved:'
@@ -396,7 +396,7 @@ async function refreshIfDue($: EngineInterface): Promise<void> {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
-      name: 'terminal-dashboard',
+      name: 'tui-dashboard',
       description: 'Open the dashboard pane; with a name, bring back a saved dashboard',
       argumentHint: '[name | list | delete <name>]',
     })
@@ -432,7 +432,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'terminal-dashboard' }, async ($, e) => {
+  on('command.run', { command: 'tui-dashboard' }, async ($, e) => {
     const [verb = '', ...rest] = e.args.trim().split(/\s+/).filter(Boolean)
     if (verb === 'list') {
       const all = await savedList($)
@@ -450,7 +450,7 @@ export const register: Register = on => {
     }
     if (verb) {
       const saved = (await $.store.get(SAVED_PREFIX + verb)) as SavedDashboard | undefined
-      if (!saved) return { text: `No saved dashboard named "${verb}". Try /terminal-dashboard list.` }
+      if (!saved) return { text: `No saved dashboard named "${verb}". Try /tui-dashboard list.` }
       await restore($, saved)
       return { text: `Opened "${saved.dashboard.title}", saved ${saved.savedAt}.` }
     }
@@ -461,12 +461,12 @@ export const register: Register = on => {
     return { text: opened.isPlaced ? 'Dashboard pane opened.' : `Could not open the pane: ${opened.reason}` }
   }).catch(() => ({ text: 'The dashboard command failed; try again.' }))
 
-  on('tool.call', { tool: 'mcp__terminal-dashboard__list_saved_dashboards' }, async $ => {
+  on('tool.call', { tool: 'mcp__tui-dashboard__list_saved_dashboards' }, async $ => {
     const all = await savedList($)
     return { result: all.length ? all.map(describeSaved).join('\n\n') : 'No saved dashboards.' }
   }).catch(() => ({ deny: 'Could not read the saved dashboards; try again.' }))
 
-  on('tool.call', { tool: 'mcp__terminal-dashboard__open_saved_dashboard' }, async ($, e) => {
+  on('tool.call', { tool: 'mcp__tui-dashboard__open_saved_dashboard' }, async ($, e) => {
     const name = String((e as unknown as { name?: unknown }).name ?? '')
     const saved = (await $.store.get(SAVED_PREFIX + name)) as SavedDashboard | undefined
     if (!saved) return { deny: `No saved dashboard named "${name}"; call list_saved_dashboards.` }
@@ -480,7 +480,7 @@ export const register: Register = on => {
     }
   }).catch(() => ({ deny: 'Could not open the saved dashboard; try again.' }))
 
-  on('tool.call', { tool: 'mcp__terminal-dashboard__render_dashboard' }, async ($, e) => {
+  on('tool.call', { tool: 'mcp__tui-dashboard__render_dashboard' }, async ($, e) => {
     const input = e as unknown as Partial<Dashboard> & {
       refresh?: { command?: unknown; every_seconds?: unknown }
     }
@@ -516,7 +516,7 @@ export const register: Register = on => {
       .catch((error: unknown) => ({ isPlaced: false, reason: String(error) }))
     const where = opened.isPlaced
       ? 'It is showing in the dashboard pane.'
-      : 'The pane is not showing yet (a narrow terminal holds it back); the person can open it with /terminal-dashboard.'
+      : 'The pane is not showing yet (a narrow terminal holds it back); the person can open it with /tui-dashboard.'
     const state = await read($, refreshState)
     const auto = !refresh
       ? ''
@@ -798,7 +798,7 @@ export const register: Register = on => {
                 void $.store
                   .set(SAVED_PREFIX + name, entry)
                   .then(() => update($, lastSaved, () => ({ name, at })))
-                  .then(() => $.ui.toast(`Saved as "${name}". Bring it back with /terminal-dashboard ${name}`))
+                  .then(() => $.ui.toast(`Saved as "${name}". Bring it back with /tui-dashboard ${name}`))
               }}
             >
               Save

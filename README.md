@@ -1,7 +1,7 @@
-# Terminal Dashboard 🥧
+# TUI Dashboard 🥧
 
 Tired of staring at walls of numbers? Bored of tables that are longer than your
-daily standup? Look no further! Terminal Dashboard turns whatever Claude finds
+daily standup? Look no further! TUI Dashboard turns whatever Claude finds
 into bar charts, sparklines and, yes, real round pie charts, right in your
 terminal, next to the chat. No browser tabs. No spreadsheets. No headaches.
 
@@ -15,13 +15,13 @@ to refresh it with new numbers.
 At the prompt of a Claude Code terminal session:
 
 ```
-/plugin install terminal-dashboard --marketplace kevteg/claude-terminal-dashboard
+/plugin install tui-dashboard --marketplace kevteg/claude-tui-dashboard
 ```
 
 From a shell:
 
 ```
-claude plugin install terminal-dashboard --marketplace kevteg/claude-terminal-dashboard
+claude plugin install tui-dashboard --marketplace kevteg/claude-tui-dashboard
 ```
 
 The repository is private for now. Installing needs read access to it on GitHub, and a git
@@ -31,7 +31,7 @@ credential for github.com on your machine (an SSH key, or `gh auth login` then `
 
 - Ask Claude for a dashboard, e.g. "make me a dashboard of the errors in this log file by hour".
   Claude calls its `render_dashboard` tool and the pane opens beside the chat.
-- The pane opens by itself when the terminal is wide enough. Type `/terminal-dashboard` to open it at
+- The pane opens by itself when the terminal is wide enough. Type `/tui-dashboard` to open it at
   any width.
 - To keep it updated, ask Claude to refresh it, or loop it: `/loop 30m refresh the dashboard`.
 
@@ -73,8 +73,8 @@ script: what to print, how often to run, and how to cache the expensive parts.
 Press **Save** next to the dashboard's title to keep it, with its refresh command and Claude's
 notes on how the data was gathered. Bring it back in any later session:
 
-- `/terminal-dashboard <name>` puts it back in the pane right away, no Claude needed
-- `/terminal-dashboard list` shows what you saved, and `/terminal-dashboard delete <name>` removes one
+- `/tui-dashboard <name>` puts it back in the pane right away, no Claude needed
+- `/tui-dashboard list` shows what you saved, and `/tui-dashboard delete <name>` removes one
 - Or ask Claude: it can list and open saved dashboards, and uses those notes to update them
 
 A saved refresh command still waits for you to press Start in each new session.
@@ -100,12 +100,12 @@ back.
 Without Claude doing anything:
 
 ```
-> /terminal-dashboard list
+> /tui-dashboard list
 app-log-errors-per-hour: "App log errors per hour", saved Nov 12, 7:15 PM, 4 components
   refresh every 300 s: /Users/me/.local/bin/uv run --script /Users/me/claude-dashboards/app_errors.py
   recipe: Counts ERROR lines in /var/log/myapp/app.log per hour; ...
 
-> /terminal-dashboard app-log-errors-per-hour
+> /tui-dashboard app-log-errors-per-hour
 Opened "App log errors per hour", saved Nov 12, 7:15 PM.
 ```
 

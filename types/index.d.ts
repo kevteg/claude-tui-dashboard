@@ -42,7 +42,7 @@ export type RefreshState = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'terminal-dashboard': {
+    'tui-dashboard': {
       dashboard: Shaped<Dashboard | null>
       refresh: Shaped<RefreshState>
       lastSaved: Shaped<{ name: string; at: string } | null>
