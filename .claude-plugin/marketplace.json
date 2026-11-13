@@ -1,0 +1,5 @@
+{
+  "name": "claude-terminal-dashboard",
+  "owner": { "name": "kevteg" },
+  "plugins": [{ "name": "terminal-dashboard", "source": "./" }]
+}
