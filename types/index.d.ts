@@ -21,8 +21,13 @@ export type Dashboard = {
   components: Component[]
   size?: { columns?: number; rows?: number }
   refresh?: Refresh
+  // How the data was gathered, so a later session can rebuild or update the dashboard.
+  recipe?: string
   updatedAt: string
 }
+
+// What the Save button stores, under `saved:<name>` in the plugin's store.
+export type SavedDashboard = { name: string; savedAt: string; dashboard: Dashboard }
 
 // A command that prints a fresh { title?, subtitle?, components } as JSON on stdout.
 export type Refresh = { command: string[]; everySeconds: number }
@@ -37,6 +42,10 @@ export type RefreshState = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'terminal-dashboard': { dashboard: Shaped<Dashboard | null>; refresh: Shaped<RefreshState> }
+    'terminal-dashboard': {
+      dashboard: Shaped<Dashboard | null>
+      refresh: Shaped<RefreshState>
+      lastSaved: Shaped<{ name: string; at: string } | null>
+    }
   }
 }

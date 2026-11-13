@@ -31,7 +31,7 @@ credential for github.com on your machine (an SSH key, or `gh auth login` then `
 
 - Ask Claude for a dashboard, e.g. "make me a dashboard of the errors in this log file by hour".
   Claude calls its `render_dashboard` tool and the pane opens beside the chat.
-- The pane opens by itself when the terminal is wide enough. Type `/tui-dashboard` to open it at
+- The pane opens by itself when the terminal is wide enough. Type `/terminal-dashboard` to open it at
   any width.
 - To keep it updated, ask Claude to refresh it, or loop it: `/loop 30m refresh the dashboard`.
 
@@ -61,12 +61,69 @@ The pane never runs a command on its own: it shows you the exact command and wai
 press **Start auto-refresh**. A different command needs a new Start, and **Stop** turns it off.
 The command runs on your machine as you, with your credentials.
 
+Approval is tied to the command, not to what the script contains: if the script file changes
+while auto-refresh is on, the next run uses the new version without asking. Keep refresh scripts
+somewhere only you write to.
+
 The plugin includes a `live-dashboards` skill that teaches Claude how to write a good refresh
 script: what to print, how often to run, and how to cache the expensive parts.
 
+## Saving dashboards
+
+Press **Save** next to the dashboard's title to keep it, with its refresh command and Claude's
+notes on how the data was gathered. Bring it back in any later session:
+
+- `/terminal-dashboard <name>` puts it back in the pane right away, no Claude needed
+- `/terminal-dashboard list` shows what you saved, and `/terminal-dashboard delete <name>` removes one
+- Or ask Claude: it can list and open saved dashboards, and uses those notes to update them
+
+A saved refresh command still waits for you to press Start in each new session.
+
+### Example: build it once, bring it back tomorrow
+
+**Today**, in a Claude Code session:
+
+```
+> Make me a live dashboard of the error lines in /var/log/myapp/app.log, per hour,
+  and keep it updated every 5 minutes
+```
+
+Claude writes a small refresh script, runs it once, and draws the dashboard. In the pane:
+
+1. Press **Start auto-refresh**: the pane shows the exact command first. From now on it redraws
+   every 5 minutes by itself.
+2. Press **Save** next to the title. A toast confirms the name, here `app-log-errors-per-hour`.
+
+**Tomorrow**, in a brand-new session (`claude` in a new terminal, or `/clear`), there are two ways
+back.
+
+Without Claude doing anything:
+
+```
+> /terminal-dashboard list
+app-log-errors-per-hour: "App log errors per hour", saved Nov 12, 7:15 PM, 4 components
+  refresh every 300 s: /Users/me/.local/bin/uv run --script /Users/me/claude-dashboards/app_errors.py
+  recipe: Counts ERROR lines in /var/log/myapp/app.log per hour; ...
+
+> /terminal-dashboard app-log-errors-per-hour
+Opened "App log errors per hour", saved Nov 12, 7:15 PM.
+```
+
+The pane shows the dashboard as you saved it. Press **Start auto-refresh** again and it is live.
+
+Or ask Claude, when you want something changed too:
+
+```
+> Open my app log errors dashboard and add a pie of errors by module
+```
+
+Claude finds it with `list_saved_dashboards`, opens it with `open_saved_dashboard`, reads the
+recipe (where the data comes from and where the script lives), changes the script and redraws.
+Press **Save** again to keep the new version under the same name.
+
 ## Limits
 
-- The pane shows one dashboard at a time; drawing a new one replaces it.
+- The pane shows one dashboard at a time; drawing a new one replaces it (Save it first to keep it).
 - Charts are drawn with Unicode block characters, so they are as sharp as your terminal font.
 - Without a refresh command, the dashboard only changes when Claude redraws it.
 

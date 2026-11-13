@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 const PANE = {
   plugin: 'terminal-dashboard',
@@ -19,11 +19,14 @@ const PANE = {
 const DAYS = ['Mon', 'Tue', 'Wed']
 
 async function start($: any, on: any) {
-  on('command.register', () => ({ value: { command: 'tui-dashboard' } }))
+  const clock = mock.clock(on)
+  mock.store(on)
+  on('command.register', () => ({ value: { command: 'terminal-dashboard' } }))
   on('tool.register', () => ({ value: {} }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  return clock
 }
 
 test('the pane says so before any dashboard', async ($, on) => {
@@ -160,4 +163,79 @@ test('a refresh command that is not a list of strings is refused', async ($, on)
   })
 
   expect((ran as { deny?: string }).deny).toMatch(/argv/)
+})
+
+test('Save keeps the dashboard and its recipe, and /terminal-dashboard brings it back', async ($, on) => {
+  await start($, on)
+  await $.tool.call({
+    tool: 'mcp__terminal-dashboard__render_dashboard',
+    title: 'Orders Today!',
+    recipe: 'Counted from orders.csv, grouped by channel.',
+    components: [{ type: 'metrics', items: [{ label: 'Orders', value: '42' }] }],
+    refresh: { command: ['/bin/orders-dashboard'], every_seconds: 120 },
+  })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'save-dashboard' })
+  expect(await ui.find({ type: 'Text', text: /saved as orders-today/ })).toBeTruthy()
+  await ui.unmount()
+
+  const listed = await $.tool.call({ tool: 'mcp__terminal-dashboard__list_saved_dashboards' })
+  expect(String((listed as { result?: unknown }).result)).toMatch(/orders-today: "Orders Today!".*\n.*every 120 s: \/bin\/orders-dashboard\n.*recipe: Counted from orders.csv/)
+
+  await $.tool.call({
+    tool: 'mcp__terminal-dashboard__render_dashboard',
+    title: 'Something else',
+    components: [{ type: 'text', text: 'other' }],
+  })
+  const opened = await $.tool.call({ tool: 'mcp__terminal-dashboard__open_saved_dashboard', name: 'orders-today' })
+  expect(String((opened as { result?: unknown }).result)).toMatch(/back in the pane/)
+
+  const again = await $.ui.mount(PANE)
+  expect(await again.find({ type: 'Text', text: /^42$/ })).toBeTruthy()
+  expect(await again.find({ type: 'Text', text: /every 120 s is off/ })).toBeTruthy()
+  await again.unmount()
+})
+
+test('opening a dashboard nobody saved is refused', async ($, on) => {
+  await start($, on)
+  const opened = await $.tool.call({ tool: 'mcp__terminal-dashboard__open_saved_dashboard', name: 'nope' })
+
+  expect((opened as { deny?: string }).deny).toMatch(/list_saved_dashboards/)
+})
+
+test('after Start, the pane runs the command on its timer and draws what it prints', async ($, on) => {
+  const ran: string[][] = []
+  on('process.run', (_: unknown, e: { argv: readonly string[] }) => {
+    ran.push([...e.argv])
+    return {
+      value: {
+        exitCode: 0,
+        stdout: JSON.stringify({ components: [{ type: 'metrics', items: [{ label: 'Live', value: '7' }] }] }),
+        stderr: '',
+        isStdoutTruncated: false,
+        isStderrTruncated: false,
+      },
+    }
+  })
+  const clock = await start($, on)
+  await $.tool.call({
+    tool: 'mcp__terminal-dashboard__render_dashboard',
+    title: 'Live',
+    components: [{ type: 'text', text: 'first frame' }],
+    refresh: { command: ['/bin/print-dashboard'], every_seconds: 60 },
+  })
+  await clock.advance(30_000)
+  expect(ran).toHaveLength(0)
+
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'start-refresh' })
+  await clock.advance(10_000)
+  expect(ran).toEqual([['/bin/print-dashboard']])
+  expect(await ui.find({ type: 'Text', text: /^7$/ })).toBeTruthy()
+
+  await clock.advance(30_000)
+  expect(ran).toHaveLength(1)
+  await clock.advance(30_000)
+  expect(ran).toHaveLength(2)
+  await ui.unmount()
 })

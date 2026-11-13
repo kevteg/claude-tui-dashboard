@@ -47,6 +47,14 @@ exact command, so make the command short and obviously what it claims to be.
    dashboard reads well, and only then pass it as `refresh` along with that first output as
    `components`.
 
+## Saving it for later
+
+The pane has a **Save** button; `/terminal-dashboard <name>` and `open_saved_dashboard` bring a saved
+dashboard back in a later session, refresh command included (it needs a new Start). Always pass a
+`recipe` to `render_dashboard`: the data sources, the queries, the filters and where the refresh
+script lives, written for a session that never saw this conversation. That recipe is what lets
+the next session update or change the dashboard instead of starting over.
+
 ## Example
 
 A dashboard of a log file's error lines, refreshed every 5 minutes:

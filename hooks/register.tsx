@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { Component, Dashboard, Refresh, RefreshState, Series, Tone, Width } from '../types'
+import type { Component, Dashboard, Refresh, RefreshState, SavedDashboard, Series, Tone, Width } from '../types'
 
 const PANE = 'dashboard'
 const TOOL = 'render_dashboard'
@@ -16,6 +16,11 @@ const refreshState = atom(
   { approved: null, lastRunAt: 0, lastError: null, isRunning: false } as RefreshState,
   { shape: 'refresh-1' },
 )
+const lastSaved = atom({ plugin: 'terminal-dashboard', key: 'lastSaved' } as const, null, {
+  shape: 'last-saved-1',
+})
+const SAVED_PREFIX = 'saved:'
+
 // Refresh no faster than once a minute, and check for due refreshes this often.
 const MIN_REFRESH_SECONDS = 60
 const TICK_MS = 10_000
@@ -165,6 +170,11 @@ const INPUT_SCHEMA = {
 
 INPUT_SCHEMA.properties = {
   ...INPUT_SCHEMA.properties,
+  recipe: {
+    type: 'string',
+    description:
+      'How the data was gathered: sources, queries, filters, scripts and anything non-obvious, written for a later session with none of this conversation. Saved with the dashboard when the person presses Save, so it can be rebuilt or updated.',
+  },
   refresh: {
     type: 'object',
     description:
@@ -199,6 +209,7 @@ const DESCRIPTION = [
   'You decide the layout: size.columns asks for a pane width, and each component\'s width (full, two_thirds, half, third) places components side by side.',
   'Give charts room: a bar chart needs about 40 columns, a table the sum of its widest values.',
   'To keep a dashboard live without calling this tool again, pass refresh with a command that prints the next dashboard as JSON.',
+  'Always pass a recipe, so a saved dashboard can be rebuilt later; list_saved_dashboards and open_saved_dashboard reach the saved ones.',
 ].join(' ')
 
 function formatNumber(n: number): string {
@@ -293,6 +304,44 @@ function rows(components: Component[]): Component[][] {
   return out
 }
 
+function slug(title: string): string {
+  return (
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'dashboard'
+  )
+}
+
+async function savedList($: EngineInterface): Promise<SavedDashboard[]> {
+  const keys = (await $.store.keys()).filter(k => k.startsWith(SAVED_PREFIX))
+  const all = await Promise.all(keys.map(k => $.store.get(k)))
+  return all.filter((v): v is SavedDashboard => !!v && typeof v === 'object' && 'dashboard' in v)
+}
+
+// Puts a saved dashboard back in the pane. Its refresh command still needs a Start in this session.
+async function restore($: EngineInterface, saved: SavedDashboard): Promise<void> {
+  await update($, dashboard, () => ({ ...saved.dashboard, updatedAt: `saved ${saved.savedAt}` }))
+  await $.ui
+    .open({
+      id: PANE,
+      title: saved.dashboard.title,
+      columns: saved.dashboard.size?.columns,
+      rows: saved.dashboard.size?.rows,
+    })
+    .catch(() => undefined)
+}
+
+function describeSaved(s: SavedDashboard): string {
+  const d = s.dashboard
+  return [
+    `${s.name}: "${d.title}", saved ${s.savedAt}, ${d.components.length} components`,
+    d.refresh ? `  refresh every ${d.refresh.everySeconds} s: ${d.refresh.command.join(' ')}` : '  no refresh command',
+    d.recipe ? `  recipe: ${d.recipe}` : '  no recipe',
+  ].join('\n')
+}
+
 function commandKey(refresh: Refresh): string {
   return JSON.stringify(refresh.command)
 }
@@ -311,8 +360,8 @@ async function refreshIfDue($: EngineInterface): Promise<void> {
   const state = await read($, refreshState)
   const r = board?.refresh
   if (!board || !r || state.approved !== commandKey(r) || state.isRunning) return
-  const now = Date.now()
-  if (now - state.lastRunAt < r.everySeconds * 1000) return
+  const now = await $.clock.now()
+  if (state.lastRunAt > 0 && now - state.lastRunAt < r.everySeconds * 1000) return
 
   await update($, refreshState, s => ({ ...s, isRunning: true }))
   let error: string | null = null
@@ -347,8 +396,27 @@ async function refreshIfDue($: EngineInterface): Promise<void> {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
-      name: 'tui-dashboard',
-      description: 'Open the dashboard pane Claude draws with render_dashboard',
+      name: 'terminal-dashboard',
+      description: 'Open the dashboard pane; with a name, bring back a saved dashboard',
+      argumentHint: '[name | list | delete <name>]',
+    })
+    await $.tool.register({
+      name: 'list_saved_dashboards',
+      description:
+        'Lists the dashboards the person saved with the pane\'s Save button, in any session: name, title, when, its refresh command and its recipe (how the data was gathered).',
+      inputSchema: { type: 'object', properties: {} },
+      isDeferred: false,
+    })
+    await $.tool.register({
+      name: 'open_saved_dashboard',
+      description:
+        'Puts a saved dashboard back in the pane as it was saved, and returns its recipe and components, so you can refresh or change it with render_dashboard. A saved refresh command needs the person to press Start again.',
+      inputSchema: {
+        type: 'object',
+        properties: { name: { type: 'string', description: 'A name from list_saved_dashboards.' } },
+        required: ['name'],
+      },
+      isDeferred: false,
     })
     await $.tool.register({
       name: TOOL,
@@ -364,13 +432,53 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'tui-dashboard' }, async $ => {
+  on('command.run', { command: 'terminal-dashboard' }, async ($, e) => {
+    const [verb = '', ...rest] = e.args.trim().split(/\s+/).filter(Boolean)
+    if (verb === 'list') {
+      const all = await savedList($)
+      return {
+        text: all.length
+          ? all.map(describeSaved).join('\n')
+          : 'No saved dashboards yet. Press Save in the dashboard pane to keep one.',
+      }
+    }
+    if (verb === 'delete') {
+      const name = rest.join(' ')
+      if (!(await $.store.get(SAVED_PREFIX + name))) return { text: `No saved dashboard named "${name}".` }
+      await $.store.delete(SAVED_PREFIX + name)
+      return { text: `Deleted the saved dashboard "${name}".` }
+    }
+    if (verb) {
+      const saved = (await $.store.get(SAVED_PREFIX + verb)) as SavedDashboard | undefined
+      if (!saved) return { text: `No saved dashboard named "${verb}". Try /terminal-dashboard list.` }
+      await restore($, saved)
+      return { text: `Opened "${saved.dashboard.title}", saved ${saved.savedAt}.` }
+    }
     const opened = await $.ui
       .open({ id: PANE, title: 'Dashboard' })
       .catch((error: unknown) => ({ isPlaced: false, reason: String(error) }))
 
     return { text: opened.isPlaced ? 'Dashboard pane opened.' : `Could not open the pane: ${opened.reason}` }
-  })
+  }).catch(() => ({ text: 'The dashboard command failed; try again.' }))
+
+  on('tool.call', { tool: 'mcp__terminal-dashboard__list_saved_dashboards' }, async $ => {
+    const all = await savedList($)
+    return { result: all.length ? all.map(describeSaved).join('\n\n') : 'No saved dashboards.' }
+  }).catch(() => ({ deny: 'Could not read the saved dashboards; try again.' }))
+
+  on('tool.call', { tool: 'mcp__terminal-dashboard__open_saved_dashboard' }, async ($, e) => {
+    const name = String((e as unknown as { name?: unknown }).name ?? '')
+    const saved = (await $.store.get(SAVED_PREFIX + name)) as SavedDashboard | undefined
+    if (!saved) return { deny: `No saved dashboard named "${name}"; call list_saved_dashboards.` }
+    await restore($, saved)
+    return {
+      result: [
+        describeSaved(saved),
+        'It is back in the pane as saved. To update it, call render_dashboard with the same title, recipe and refresh.',
+        `Components as saved: ${JSON.stringify(saved.dashboard.components)}`,
+      ].join('\n\n'),
+    }
+  }).catch(() => ({ deny: 'Could not open the saved dashboard; try again.' }))
 
   on('tool.call', { tool: 'mcp__terminal-dashboard__render_dashboard' }, async ($, e) => {
     const input = e as unknown as Partial<Dashboard> & {
@@ -395,6 +503,7 @@ export const register: Register = on => {
       subtitle: input.subtitle,
       size: input.size,
       refresh,
+      recipe: typeof (input as { recipe?: unknown }).recipe === 'string' ? (input as { recipe: string }).recipe : undefined,
       components: input.components as Component[],
       updatedAt: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
     })).then(
@@ -407,7 +516,7 @@ export const register: Register = on => {
       .catch((error: unknown) => ({ isPlaced: false, reason: String(error) }))
     const where = opened.isPlaced
       ? 'It is showing in the dashboard pane.'
-      : 'The pane is not showing yet (a narrow terminal holds it back); the person can open it with /tui-dashboard.'
+      : 'The pane is not showing yet (a narrow terminal holds it back); the person can open it with /terminal-dashboard.'
     const state = await read($, refreshState)
     const auto = !refresh
       ? ''
@@ -423,6 +532,7 @@ export const register: Register = on => {
     const { Button } = $.ui.resolve(e)
     const board = await read($, dashboard)
     const auto = await read($, refreshState)
+    const saved = await read($, lastSaved)
     const props = e.props as { bodyColumns?: number }
     const columns = e.viewport?.columns ?? props.bodyColumns ?? 60
 
@@ -621,7 +731,7 @@ export const register: Register = on => {
           const legendWidth = Math.max(...c.slices.map(s => s.label.length)) + 22
           const sideBySide = avail - 4 >= 24 + legendWidth
           const room = sideBySide ? avail - 4 - legendWidth - 2 : avail - 4
-          const diameter = Math.max(12, Math.min(40, room - (room % 2)))
+          const diameter = Math.max(12, Math.min(28, room - (room % 2)))
           const legend = (
             <Box flexDirection="column" justifyContent="center">
               {c.slices.map((s, i) => (
@@ -672,7 +782,29 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" rowGap={1}>
         <Box flexDirection="column">
-          <Text bold>{board.title}</Text>
+          <Box flexDirection="row" columnGap={2}>
+            <Text bold>{board.title}</Text>
+            <Button
+              key="save-dashboard"
+              onPress={() => {
+                const name = slug(board.title)
+                const at = new Date().toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })
+                const entry: SavedDashboard = { name, savedAt: at, dashboard: board }
+                void $.store
+                  .set(SAVED_PREFIX + name, entry)
+                  .then(() => update($, lastSaved, () => ({ name, at })))
+                  .then(() => $.ui.toast(`Saved as "${name}". Bring it back with /terminal-dashboard ${name}`))
+              }}
+            >
+              Save
+            </Button>
+            {saved && saved.name === slug(board.title) && <Text dimColor>saved as {saved.name}, {saved.at}</Text>}
+          </Box>
           {board.subtitle && <Text dimColor>{board.subtitle}</Text>}
           <Text dimColor>Updated {board.updatedAt}</Text>
         </Box>
