@@ -1,9 +1,14 @@
 # Terminal Dashboard
 
-A Claude Code plugin that gives Claude a dashboard pane beside the chat. Ask for a dashboard of
-anything Claude can look up, such as logs, query results or files, and Claude draws it in the pane
-with metrics, bar charts, pie charts, sparklines, tables and callouts. Ask again to refresh it with
-new numbers.
+Tired of staring at walls of numbers? Bored of tables that are longer than your
+daily standup? Look no further! Terminal Dashboard turns whatever Claude finds
+into bar charts, sparklines and, yes, real round pie charts, right in your
+terminal, next to the chat. No browser tabs. No spreadsheets. No headaches.
+
+It's a Claude Code plugin that gives Claude a dashboard pane beside the chat. Ask
+for a dashboard of anything Claude can look up, such as logs, query results or
+files, and Claude draws it with metrics, charts, tables and callouts. Ask again
+to refresh it with new numbers.
 
 ## Install
 
