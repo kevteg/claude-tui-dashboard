@@ -121,7 +121,8 @@ test('a pie chart draws a round pie and a legend with percentages', async ($, on
   expect(await ui.find({ type: 'Text', text: /^75\.0%$/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /^25\.0%$/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /Total 400/ })).toBeTruthy()
-  expect((await ui.findAll({ type: 'Text', text: /[▀▄]/ })).length).toBeGreaterThan(10)
+  // Painted cells: runs of spaces, two per pixel.
+  expect((await ui.findAll({ type: 'Text', text: /^( {2})+$/ })).length).toBeGreaterThan(10)
   await ui.unmount()
 })
 
@@ -237,5 +238,31 @@ test('after Start, the pane runs the command on its timer and draws what it prin
   expect(ran).toHaveLength(1)
   await clock.advance(30_000)
   expect(ran).toHaveLength(2)
+  await ui.unmount()
+})
+
+test('the legend goes below the pie with full labels', async ($, on) => {
+  await start($, on)
+  await $.tool.call({
+    tool: 'mcp__tui-dashboard__render_dashboard',
+    title: 'Narrow',
+    components: [
+      {
+        type: 'pie_chart',
+        width: 'half',
+        slices: [
+          { label: 'Went quiet: found nothing this week', value: 3 },
+          { label: 'Healthy', value: 1 },
+        ],
+      },
+    ],
+  })
+  const ui = await $.ui.mount({ ...PANE, viewport: { columns: 100, rows: 60 } })
+
+  expect(await ui.find({ type: 'Text', text: 'Went quiet: found nothing this week' })).toBeTruthy()
+  // The pie is at most 32 cells wide.
+  const cells = await ui.findAll({ type: 'Text', text: /^( {2})+$/ })
+  expect(cells.length).toBeGreaterThan(0)
+  expect(Math.max(...cells.map(t => t.text.length))).toBeLessThanOrEqual(32)
   await ui.unmount()
 })

@@ -238,10 +238,12 @@ function fit(text: string, width: number): string {
   return text.length > width ? text.slice(0, Math.max(0, width - 1)) + '…' : text
 }
 
-type Run = { text: string; color?: string; backgroundColor?: string }
+type Run = { text: string; backgroundColor?: string }
 
-// A circle of square "pixels": each cell holds two, top and bottom, drawn with half blocks,
-// since a terminal cell is about twice as tall as it is wide. Angles run clockwise from 12.
+// A circle of square "pixels", each two cells wide (a terminal cell is about twice as tall as it
+// is wide), painted with background colour. Half blocks would double the resolution, but they
+// only fill the glyph's height, so terminals with extra line spacing show gaps between rows and
+// stretch the circle into an oval. Angles run clockwise from 12.
 function pieRows(values: number[], diameter: number, donut: boolean): Run[][] {
   const total = sum(values)
   const bounds: number[] = []
@@ -250,7 +252,8 @@ function pieRows(values: number[], diameter: number, donut: boolean): Run[][] {
     acc += total > 0 ? v / total : 0
     bounds.push(acc)
   }
-  const radius = diameter / 2
+  const size = Math.max(1, Math.floor(diameter / 2))
+  const radius = size / 2
   const pixel = (x: number, y: number): string | undefined => {
     const dx = x + 0.5 - radius
     const dy = y + 0.5 - radius
@@ -261,24 +264,15 @@ function pieRows(values: number[], diameter: number, donut: boolean): Run[][] {
     return PALETTE[(slice < 0 ? values.length - 1 : slice) % PALETTE.length]
   }
   const out: Run[][] = []
-  for (let row = 0; row < diameter / 2; row++) {
+  for (let y = 0; y < size; y++) {
     const runs: Run[] = []
-    for (let x = 0; x < diameter; x++) {
-      const top = pixel(x, row * 2)
-      const bottom = pixel(x, row * 2 + 1)
-      const cell: Run =
-        top && bottom
-          ? { text: '▀', color: top, backgroundColor: bottom }
-          : top
-            ? { text: '▀', color: top }
-            : bottom
-              ? { text: '▄', color: bottom }
-              : { text: ' ' }
+    for (let x = 0; x < size; x++) {
+      const colour = pixel(x, y)
       const last = runs[runs.length - 1]
-      if (last && last.color === cell.color && last.backgroundColor === cell.backgroundColor) {
-        last.text += cell.text
+      if (last && last.backgroundColor === colour) {
+        last.text += '  '
       } else {
-        runs.push(cell)
+        runs.push({ text: '  ', backgroundColor: colour })
       }
     }
     out.push(runs)
@@ -728,16 +722,17 @@ export const register: Register = on => {
         case 'pie_chart': {
           const values = c.slices.map(s => Math.max(0, s.value))
           const total = sum(values)
-          const legendWidth = Math.max(...c.slices.map(s => s.label.length)) + 22
-          const sideBySide = avail - 4 >= 24 + legendWidth
-          const room = sideBySide ? avail - 4 - legendWidth - 2 : avail - 4
-          const diameter = Math.max(12, Math.min(28, room - (room % 2)))
+          // The legend always goes below, so the pie gets the column's width, up to 32 cells.
+          const room = avail - 4
+          const diameter = Math.max(12, Math.min(32, room - (room % 2)))
           const legend = (
-            <Box flexDirection="column" justifyContent="center">
+            <Box flexDirection="column">
               {c.slices.map((s, i) => (
                 <Box flexDirection="row" columnGap={1}>
                   <Text color={PALETTE[i % PALETTE.length]}>■</Text>
-                  <Text>{s.label}</Text>
+                  <Box flexShrink={1}>
+                    <Text wrap="wrap">{s.label}</Text>
+                  </Box>
                   <Text bold>{formatNumber(values[i] ?? 0)}</Text>
                   <Text dimColor>{total > 0 ? (((values[i] ?? 0) / total) * 100).toFixed(1) + '%' : ''}</Text>
                 </Box>
@@ -747,14 +742,12 @@ export const register: Register = on => {
           )
           return titled(
             c.title,
-            <Box flexDirection={sideBySide ? 'row' : 'column'} columnGap={2}>
+            <Box flexDirection="column" rowGap={1}>
               <Box flexDirection="column">
                 {pieRows(values, diameter, c.donut ?? false).map(runs => (
                   <Box flexDirection="row">
                     {runs.map(r => (
-                      <Text color={r.color} backgroundColor={r.backgroundColor}>
-                        {r.text}
-                      </Text>
+                      <Text backgroundColor={r.backgroundColor}>{r.text}</Text>
                     ))}
                   </Box>
                 ))}
