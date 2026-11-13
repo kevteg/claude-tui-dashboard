@@ -125,7 +125,8 @@ Press **Save** again to keep the new version under the same name.
 
 - The pane shows one dashboard at a time; drawing a new one replaces it (Save it first to keep it).
 - Charts are drawn with Unicode block characters, so they are as sharp as your terminal font.
-- Without a refresh command, the dashboard only changes when Claude redraws it.
+- Without a refresh command, the numbers stay as drawn: they change only when Claude redraws the
+  dashboard. Opening a saved one shows it as it was when saved.
 
 ## Development
 
