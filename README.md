@@ -1,4 +1,4 @@
-# Terminal Dashboard
+# Terminal Dashboard 🥧
 
 Tired of staring at walls of numbers? Bored of tables that are longer than your
 daily standup? Look no further! Terminal Dashboard turns whatever Claude finds
