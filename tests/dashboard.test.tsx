@@ -121,3 +121,43 @@ test('a pie chart draws a round pie and a legend with percentages', async ($, on
   expect((await ui.findAll({ type: 'Text', text: /[▀▄]/ })).length).toBeGreaterThan(10)
   await ui.unmount()
 })
+
+test('auto-refresh shows its command and waits for Start, then Stop turns it off', async ($, on) => {
+  let runs = 0
+  on('process.run', () => {
+    runs += 1
+    return { value: { exitCode: 0, stdout: '{"components": []}', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  await start($, on)
+  const ran = await $.tool.call({
+    tool: 'mcp__terminal-dashboard__render_dashboard',
+    title: 'Live',
+    components: [{ type: 'text', text: 'hello' }],
+    refresh: { command: ['./print-dashboard', '--fast'], every_seconds: 5 },
+  })
+  expect(String((ran as { result?: unknown }).result)).toMatch(/waits for the person to press Start/)
+
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /every 60 s is off/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: './print-dashboard --fast' })).toBeTruthy()
+  expect(runs).toBe(0)
+
+  await ui.press({ key: 'start-refresh' })
+  expect(await ui.find({ type: 'Text', text: /● Auto-refresh every 60 s/ })).toBeTruthy()
+
+  await ui.press({ key: 'stop-refresh' })
+  expect(await ui.find({ type: 'Text', text: /every 60 s is off/ })).toBeTruthy()
+  await ui.unmount()
+})
+
+test('a refresh command that is not a list of strings is refused', async ($, on) => {
+  await start($, on)
+  const ran = await $.tool.call({
+    tool: 'mcp__terminal-dashboard__render_dashboard',
+    title: 'Live',
+    components: [],
+    refresh: { command: 'rm -rf /', every_seconds: 60 },
+  })
+
+  expect((ran as { deny?: string }).deny).toMatch(/argv/)
+})

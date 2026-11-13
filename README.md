@@ -51,11 +51,24 @@ Claude chooses the layout: the pane width it asks for, and a width per component
 `two_thirds`, `half`, `third`) so smaller charts sit side by side. A width you drag the pane to
 yourself wins.
 
+## Live dashboards
+
+Claude can give a dashboard a refresh command: a script that prints the next dashboard as JSON
+(`{ "title"?, "subtitle"?, "components": [...] }`). The pane then re-runs it on a timer, at most
+once a minute, and redraws without asking Claude again.
+
+The pane never runs a command on its own: it shows you the exact command and waits until you
+press **Start auto-refresh**. A different command needs a new Start, and **Stop** turns it off.
+The command runs on your machine as you, with your credentials.
+
+The plugin includes a `live-dashboards` skill that teaches Claude how to write a good refresh
+script: what to print, how often to run, and how to cache the expensive parts.
+
 ## Limits
 
 - The pane shows one dashboard at a time; drawing a new one replaces it.
 - Charts are drawn with Unicode block characters, so they are as sharp as your terminal font.
-- The dashboard only changes when Claude redraws it; it does not fetch data by itself.
+- Without a refresh command, the dashboard only changes when Claude redraws it.
 
 ## Development
 

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { Register, RenderChildren } from 'claude-code'
+import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { Component, Dashboard, Series, Tone, Width } from '../types'
+import type { Component, Dashboard, Refresh, RefreshState, Series, Tone, Width } from '../types'
 
 const PANE = 'dashboard'
 const TOOL = 'render_dashboard'
@@ -10,6 +10,15 @@ const TOOL = 'render_dashboard'
 const dashboard = atom({ plugin: 'terminal-dashboard', key: 'dashboard' } as const, null, {
   shape: 'dashboard-1',
 })
+
+const refreshState = atom(
+  { plugin: 'terminal-dashboard', key: 'refresh' } as const,
+  { approved: null, lastRunAt: 0, lastError: null, isRunning: false } as RefreshState,
+  { shape: 'refresh-1' },
+)
+// Refresh no faster than once a minute, and check for due refreshes this often.
+const MIN_REFRESH_SECONDS = 60
+const TICK_MS = 10_000
 
 const PALETTE = ['cyan', 'yellow', 'magenta', 'green', 'blue', 'red', 'white', 'gray']
 const TONE_COLOR: Record<Tone, string> = {
@@ -156,6 +165,16 @@ const INPUT_SCHEMA = {
 
 INPUT_SCHEMA.properties = {
   ...INPUT_SCHEMA.properties,
+  refresh: {
+    type: 'object',
+    description:
+      'Optional auto-refresh: a command (argv, no shell) that prints the next dashboard as JSON on stdout ({ "title"?, "subtitle"?, "components": [...] }, components as in this tool). The pane runs it every every_seconds (at least 60) with no model turn, but only after the person presses Start in the pane, which shows them the command. Changing the command needs a new Start.',
+    properties: {
+      command: { type: 'array', items: { type: 'string' } },
+      every_seconds: { type: 'number' },
+    },
+    required: ['command', 'every_seconds'],
+  },
   size: {
     type: 'object',
     description:
@@ -179,6 +198,7 @@ const DESCRIPTION = [
   'Pass raw numbers to charts (the pane scales and formats them); pass formatted strings to metrics and tables.',
   'You decide the layout: size.columns asks for a pane width, and each component\'s width (full, two_thirds, half, third) places components side by side.',
   'Give charts room: a bar chart needs about 40 columns, a table the sum of its widest values.',
+  'To keep a dashboard live without calling this tool again, pass refresh with a command that prints the next dashboard as JSON.',
 ].join(' ')
 
 function formatNumber(n: number): string {
@@ -273,8 +293,55 @@ function rows(components: Component[]): Component[][] {
   return out
 }
 
+function commandKey(refresh: Refresh): string {
+  return JSON.stringify(refresh.command)
+}
+
+function clockTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+}
+
 function sum(values: number[]): number {
   return values.reduce((a, b) => a + b, 0)
+}
+
+// Runs the approved refresh command when it is due and swaps in the dashboard it prints.
+async function refreshIfDue($: EngineInterface): Promise<void> {
+  const board = await read($, dashboard)
+  const state = await read($, refreshState)
+  const r = board?.refresh
+  if (!board || !r || state.approved !== commandKey(r) || state.isRunning) return
+  const now = Date.now()
+  if (now - state.lastRunAt < r.everySeconds * 1000) return
+
+  await update($, refreshState, s => ({ ...s, isRunning: true }))
+  let error: string | null = null
+  try {
+    const ran = await $.process.run(r.command, { timeoutMs: 5 * 60_000 })
+    if (ran.exitCode !== 0) {
+      error = `exit ${ran.exitCode}: ${ran.stderr.trim().split('\n').slice(-1)[0] ?? ''}`
+    } else {
+      const next = JSON.parse(ran.stdout) as Partial<Dashboard>
+      if (!Array.isArray(next.components)) {
+        error = 'output has no components array'
+      } else {
+        await update($, dashboard, b =>
+          b && commandKey(b.refresh ?? { command: [], everySeconds: 0 }) === commandKey(r)
+            ? {
+                ...b,
+                title: next.title ?? b.title,
+                subtitle: next.subtitle ?? b.subtitle,
+                components: next.components as Component[],
+                updatedAt: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+              }
+            : b,
+        )
+      }
+    }
+  } catch (caught) {
+    error = String(caught)
+  }
+  await update($, refreshState, s => ({ ...s, isRunning: false, lastRunAt: now, lastError: error }))
 }
 
 export const register: Register = on => {
@@ -289,6 +356,10 @@ export const register: Register = on => {
       inputSchema: INPUT_SCHEMA,
       isDeferred: false,
     })
+    // One ticker for the session; it does nothing unless the person approved the current command.
+    $.clock.every(TICK_MS, () => {
+      void refreshIfDue($)
+    })
 
     return next(e)
   })
@@ -302,14 +373,28 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'mcp__terminal-dashboard__render_dashboard' }, async ($, e) => {
-    const input = e as unknown as Partial<Dashboard>
+    const input = e as unknown as Partial<Dashboard> & {
+      refresh?: { command?: unknown; every_seconds?: unknown }
+    }
     if (!input.title || !Array.isArray(input.components)) {
       return { deny: 'render_dashboard needs a title and a components array.' }
+    }
+    let refresh: Refresh | undefined
+    if (input.refresh) {
+      const { command, every_seconds } = input.refresh
+      if (!Array.isArray(command) || command.length === 0 || !command.every(a => typeof a === 'string')) {
+        return { deny: 'refresh.command must be a non-empty array of strings (argv, no shell).' }
+      }
+      refresh = {
+        command: command as string[],
+        everySeconds: Math.max(MIN_REFRESH_SECONDS, Number(every_seconds) || MIN_REFRESH_SECONDS),
+      }
     }
     const saved = await update($, dashboard, () => ({
       title: input.title as string,
       subtitle: input.subtitle,
       size: input.size,
+      refresh,
       components: input.components as Component[],
       updatedAt: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
     })).then(
@@ -323,13 +408,21 @@ export const register: Register = on => {
     const where = opened.isPlaced
       ? 'It is showing in the dashboard pane.'
       : 'The pane is not showing yet (a narrow terminal holds it back); the person can open it with /tui-dashboard.'
+    const state = await read($, refreshState)
+    const auto = !refresh
+      ? ''
+      : state.approved === commandKey(refresh)
+        ? ` Auto-refresh is on, every ${refresh.everySeconds} s.`
+        : ' Auto-refresh waits for the person to press Start in the pane.'
 
-    return { result: `Drew "${input.title}" with ${input.components.length} components. ${where}` }
+    return { result: `Drew "${input.title}" with ${input.components.length} components. ${where}${auto}` }
   }).catch(() => ({ deny: 'render_dashboard failed before drawing; try again.' }))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
+    const { Button } = $.ui.resolve(e)
     const board = await read($, dashboard)
+    const auto = await read($, refreshState)
     const props = e.props as { bodyColumns?: number }
     const columns = e.viewport?.columns ?? props.bodyColumns ?? 60
 
@@ -338,6 +431,45 @@ export const register: Register = on => {
         <Box flexDirection="column">
           <Text dimColor>No dashboard yet.</Text>
           <Text dimColor>Ask Claude for one, e.g. "make me a dashboard of …".</Text>
+        </Box>
+      )
+    }
+
+    const refreshBar = (r: Refresh) => {
+      const key = commandKey(r)
+      if (auto.approved !== key) {
+        return (
+          <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
+            <Text bold color="yellow">Auto-refresh every {r.everySeconds} s is off</Text>
+            <Text dimColor>Pressing Start lets this pane run, on your machine, as you:</Text>
+            <Text>{r.command.join(' ')}</Text>
+            <Button
+              key="start-refresh"
+              variant="primary"
+              onPress={() => {
+                void update($, refreshState, () => ({ approved: key, lastRunAt: 0, lastError: null, isRunning: false }))
+              }}
+            >
+              Start auto-refresh
+            </Button>
+          </Box>
+        )
+      }
+      return (
+        <Box flexDirection="row" columnGap={2}>
+          <Text color="green">● Auto-refresh every {r.everySeconds} s</Text>
+          <Text dimColor>
+            {auto.isRunning ? 'refreshing…' : auto.lastRunAt ? `last run ${clockTime(auto.lastRunAt)}` : 'starting…'}
+          </Text>
+          {auto.lastError && <Text color="red">{fit(auto.lastError, 80)}</Text>}
+          <Button
+            key="stop-refresh"
+            onPress={() => {
+              void update($, refreshState, s => ({ ...s, approved: null, isRunning: false }))
+            }}
+          >
+            Stop
+          </Button>
         </Box>
       )
     }
@@ -489,7 +621,7 @@ export const register: Register = on => {
           const legendWidth = Math.max(...c.slices.map(s => s.label.length)) + 22
           const sideBySide = avail - 4 >= 24 + legendWidth
           const room = sideBySide ? avail - 4 - legendWidth - 2 : avail - 4
-          const diameter = Math.max(12, Math.min(28, room - (room % 2)))
+          const diameter = Math.max(12, Math.min(40, room - (room % 2)))
           const legend = (
             <Box flexDirection="column" justifyContent="center">
               {c.slices.map((s, i) => (
@@ -544,6 +676,7 @@ export const register: Register = on => {
           {board.subtitle && <Text dimColor>{board.subtitle}</Text>}
           <Text dimColor>Updated {board.updatedAt}</Text>
         </Box>
+        {board.refresh && refreshBar(board.refresh)}
         {rows(board.components).map(row => {
           const gaps = row.length - 1
           return (

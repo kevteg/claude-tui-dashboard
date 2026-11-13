@@ -20,11 +20,23 @@ export type Dashboard = {
   subtitle?: string
   components: Component[]
   size?: { columns?: number; rows?: number }
+  refresh?: Refresh
   updatedAt: string
+}
+
+// A command that prints a fresh { title?, subtitle?, components } as JSON on stdout.
+export type Refresh = { command: string[]; everySeconds: number }
+
+// Auto-refresh runs only the command the person approved by pressing Start.
+export type RefreshState = {
+  approved: string | null
+  lastRunAt: number
+  lastError: string | null
+  isRunning: boolean
 }
 
 declare module 'claude-code' {
   interface PluginState {
-    'terminal-dashboard': { dashboard: Shaped<Dashboard | null> }
+    'terminal-dashboard': { dashboard: Shaped<Dashboard | null>; refresh: Shaped<RefreshState> }
   }
 }
