@@ -5,6 +5,9 @@ daily standup? Look no further! TUI Dashboard turns whatever Claude finds
 into bar charts, sparklines and, yes, real round pie charts, right in your
 terminal, next to the chat. No browser tabs. No spreadsheets. No headaches.
 
+<img width="1248" height="708" alt="dashboard-example" src="https://github.com/user-attachments/assets/e17f74f1-59de-4ad9-85c1-8ebf57f49e56" />
+
+
 It's a Claude Code plugin that gives Claude a dashboard pane beside the chat. Ask
 for a dashboard of anything Claude can look up, such as logs, query results or
 files, and Claude draws it with metrics, charts, tables and callouts. Ask again
