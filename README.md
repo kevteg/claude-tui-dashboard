@@ -132,6 +132,32 @@ Claude finds it with `list_saved_dashboards`, opens it with `open_saved_dashboar
 recipe (where the data comes from and where the script lives), changes the script and redraws.
 Press **Save** again to keep the new version under the same name.
 
+## What the plugin does on your machine
+
+TUI Dashboard is a mod: its code (`hooks/register.tsx`) runs inside Claude Code. This is
+everything it does outside drawing the pane.
+
+- **Its own tools.** It adds three tools, `render_dashboard`, `list_saved_dashboards` and
+  `open_saved_dashboard`, and answers calls to them itself; there is no server behind them. It
+  answers no other tool's calls.
+- **One command.** It adds `/tui-dashboard`, and handles only that command.
+- **One file it writes.** It reads and writes `~/.claude-dashboards/saved.json`, and only when you
+  press **Save**, open or delete a saved dashboard, or Claude lists or opens one. It reads `HOME`
+  from the environment to find that folder. On first use it also copies dashboards that an earlier
+  version kept in the plugin's private store into that file. It writes no other file, and nothing
+  that other tools run or obey.
+- **One program it runs: your refresh command.** When a dashboard has a refresh command, the pane
+  runs that exact command on a timer, at most once a minute, with a 5-minute timeout, and only after
+  you press **Start auto-refresh**. Claude writes the command when it builds the dashboard, and the
+  pane shows it to you in full before you start it. It runs on your machine as you, in the
+  session's working directory, with your environment, so it can use whatever credentials and files
+  you can. The plugin reads only what the command prints on stdout (the next dashboard) and the
+  last line of stderr (shown if it fails). It stops when you press **Stop**, when the command
+  changes, or when its program or script file changes.
+- **Nothing sent anywhere.** The plugin makes no network requests and sends no data out, including
+  your conversation, which it never reads beyond the tool calls above. A refresh command you
+  approve can do anything a program you run can do, so read it before you press Start.
+
 ## Limits
 
 - The pane shows one dashboard at a time; drawing a new one replaces it (Save it first to keep it).
