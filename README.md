@@ -3,7 +3,9 @@
 Tired of staring at walls of numbers? Bored of tables that are longer than your
 daily standup? Look no further! TUI Dashboard turns whatever Claude finds
 into bar charts, sparklines and, yes, real round pie charts, right in your
-terminal, next to the chat. No browser tabs. No spreadsheets. No headaches.
+terminal, next to the chat.
+
+No browser tabs. No spreadsheets. No headaches.
 
 <img width="1248" height="708" alt="dashboard-example" src="https://github.com/user-attachments/assets/e17f74f1-59de-4ad9-85c1-8ebf57f49e56" />
 
