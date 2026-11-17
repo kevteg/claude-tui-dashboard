@@ -82,6 +82,11 @@ notes on how the data was gathered. Bring it back in any later session:
 
 A saved refresh command still waits for you to press Start in each new session.
 
+Saved dashboards are kept in one plain file, `~/.claude-dashboards/saved.json`, shared by every
+session and every copy of the plugin. To move them to another machine or share one with a
+teammate, copy that file (or one entry in it). Saved refresh commands point at scripts on your
+machine, so share those along with it.
+
 ### Example: build it once, bring it back tomorrow
 
 **Today**, in a Claude Code session:

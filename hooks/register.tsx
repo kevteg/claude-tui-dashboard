@@ -19,7 +19,11 @@ const refreshState = atom(
 const lastSaved = atom({ plugin: 'tui-dashboard', key: 'lastSaved' } as const, null, {
   shape: 'last-saved-1',
 })
-const SAVED_PREFIX = 'saved:'
+// Saved dashboards live in one ordinary file, so every copy of the plugin (installed from any
+// marketplace, or loaded from a folder while developing) sees the same list, and a person can copy
+// or share it. Before this they were in $.store, which is private to each install.
+const SAVED_FILE = '.claude-dashboards/saved.json'
+const LEGACY_PREFIX = 'saved:'
 
 // Refresh no faster than once a minute, and check for due refreshes this often.
 const MIN_REFRESH_SECONDS = 60
@@ -308,10 +312,59 @@ function slug(title: string): string {
   )
 }
 
+type SavedFile = { version: 1; dashboards: Record<string, SavedDashboard> }
+
+function isSaved(v: unknown): v is SavedDashboard {
+  return !!v && typeof v === 'object' && 'dashboard' in v && 'name' in v
+}
+
+async function savedPath($: EngineInterface): Promise<string> {
+  const home = await $.env.get('HOME')
+  if (!home) throw new Error('HOME is not set, so there is nowhere to keep saved dashboards')
+  return `${home}/${SAVED_FILE}`
+}
+
+async function readSaved($: EngineInterface): Promise<SavedFile> {
+  const path = await savedPath($)
+  if (await $.fs.exists(path)) {
+    const parsed = JSON.parse(await $.fs.read(path)) as Partial<SavedFile>
+    return { version: 1, dashboards: parsed.dashboards ?? {} }
+  }
+  // First use of the file: bring along anything this install saved in $.store before it existed.
+  const file: SavedFile = { version: 1, dashboards: {} }
+  for (const key of await $.store.keys()) {
+    const value = await $.store.get(key)
+    if (key.startsWith(LEGACY_PREFIX) && isSaved(value)) file.dashboards[value.name] = value
+  }
+  if (Object.keys(file.dashboards).length > 0) await writeSaved($, file)
+  return file
+}
+
+async function writeSaved($: EngineInterface, file: SavedFile): Promise<void> {
+  await $.fs.write(await savedPath($), JSON.stringify(file, null, 2) + '\n')
+}
+
 async function savedList($: EngineInterface): Promise<SavedDashboard[]> {
-  const keys = (await $.store.keys()).filter(k => k.startsWith(SAVED_PREFIX))
-  const all = await Promise.all(keys.map(k => $.store.get(k)))
-  return all.filter((v): v is SavedDashboard => !!v && typeof v === 'object' && 'dashboard' in v)
+  return Object.values((await readSaved($)).dashboards).filter(isSaved)
+}
+
+async function savedNamed($: EngineInterface, name: string): Promise<SavedDashboard | undefined> {
+  const found = (await readSaved($)).dashboards[name]
+  return isSaved(found) ? found : undefined
+}
+
+async function saveDashboard($: EngineInterface, entry: SavedDashboard): Promise<void> {
+  const file = await readSaved($)
+  file.dashboards[entry.name] = entry
+  await writeSaved($, file)
+}
+
+async function deleteSaved($: EngineInterface, name: string): Promise<boolean> {
+  const file = await readSaved($)
+  if (!file.dashboards[name]) return false
+  delete file.dashboards[name]
+  await writeSaved($, file)
+  return true
 }
 
 // Puts a saved dashboard back in the pane. Its refresh command still needs a Start in this session.
@@ -438,12 +491,11 @@ export const register: Register = on => {
     }
     if (verb === 'delete') {
       const name = rest.join(' ')
-      if (!(await $.store.get(SAVED_PREFIX + name))) return { text: `No saved dashboard named "${name}".` }
-      await $.store.delete(SAVED_PREFIX + name)
+      if (!(await deleteSaved($, name))) return { text: `No saved dashboard named "${name}".` }
       return { text: `Deleted the saved dashboard "${name}".` }
     }
     if (verb) {
-      const saved = (await $.store.get(SAVED_PREFIX + verb)) as SavedDashboard | undefined
+      const saved = await savedNamed($, verb)
       if (!saved) return { text: `No saved dashboard named "${verb}". Try /tui-dashboard list.` }
       await restore($, saved)
       return { text: `Opened "${saved.dashboard.title}", saved ${saved.savedAt}.` }
@@ -462,7 +514,7 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'mcp__tui-dashboard__open_saved_dashboard' }, async ($, e) => {
     const name = String((e as unknown as { name?: unknown }).name ?? '')
-    const saved = (await $.store.get(SAVED_PREFIX + name)) as SavedDashboard | undefined
+    const saved = await savedNamed($, name)
     if (!saved) return { deny: `No saved dashboard named "${name}"; call list_saved_dashboards.` }
     await restore($, saved)
     return {
@@ -788,10 +840,10 @@ export const register: Register = on => {
                   minute: '2-digit',
                 })
                 const entry: SavedDashboard = { name, savedAt: at, dashboard: board }
-                void $.store
-                  .set(SAVED_PREFIX + name, entry)
+                void saveDashboard($, entry)
                   .then(() => update($, lastSaved, () => ({ name, at })))
                   .then(() => $.ui.toast(`Saved as "${name}". Bring it back with /tui-dashboard ${name}`))
+                  .catch((error: unknown) => $.ui.toast(`Could not save: ${String(error)}`))
               }}
             >
               Save

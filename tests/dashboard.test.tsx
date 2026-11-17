@@ -18,15 +18,35 @@ const PANE = {
 
 const DAYS = ['Mon', 'Tue', 'Wed']
 
-async function start($: any, on: any) {
+// Saved dashboards go to $HOME/.claude-dashboards/saved.json; the tests keep that file in memory.
+const SAVED = '/home/test/.claude-dashboards/saved.json'
+
+function memoryFs(on: any): Map<string, string> {
+  const files = new Map<string, string>()
+  on('fs.exists', (_: unknown, e: { path: string }) => ({ value: files.has(e.path) }))
+  on('fs.read', (_: unknown, e: { path: string }) => {
+    const text = files.get(e.path)
+    if (text === undefined) throw new Error(`ENOENT: ${e.path}`)
+    return { value: text }
+  })
+  on('fs.write', (_: unknown, e: { path: string; text: string }) => {
+    files.set(e.path, e.text)
+    return { value: undefined }
+  })
+  return files
+}
+
+async function start($: any, on: any, store?: Record<string, unknown>) {
   const clock = mock.clock(on)
-  mock.store(on)
+  mock.store(on, store)
+  mock.env(on, { HOME: '/home/test' })
+  const files = memoryFs(on)
   on('command.register', () => ({ value: { command: 'tui-dashboard' } }))
   on('tool.register', () => ({ value: {} }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  return clock
+  return { advance: (ms: number) => clock.advance(ms), files }
 }
 
 test('the pane says so before any dashboard', async ($, on) => {
@@ -265,4 +285,29 @@ test('the legend goes below the pie with full labels', async ($, on) => {
   expect(cells.length).toBeGreaterThan(0)
   expect(Math.max(...cells.map(t => t.text.length))).toBeLessThanOrEqual(32)
   await ui.unmount()
+})
+
+test('saves go to saved.json, which another install of the plugin reads', async ($, on) => {
+  const { files } = await start($, on)
+  await $.tool.call({
+    tool: 'mcp__tui-dashboard__render_dashboard',
+    title: 'Shared',
+    components: [{ type: 'text', text: 'hi' }],
+  })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'save-dashboard' })
+  await ui.unmount()
+
+  const written = JSON.parse(files.get(SAVED) ?? '{}')
+  expect(Object.keys(written.dashboards)).toEqual(['shared'])
+  expect(written.dashboards.shared.dashboard.title).toBe('Shared')
+})
+
+test('the first read brings along dashboards saved in the old private store', async ($, on) => {
+  const old = { name: 'old-one', savedAt: 'Nov 1, 9:00 AM', dashboard: { title: 'Old one', components: [], updatedAt: 'x' } }
+  const { files } = await start($, on, { 'saved:old-one': old, unrelated: 1 })
+
+  const listed = await $.tool.call({ tool: 'mcp__tui-dashboard__list_saved_dashboards' })
+  expect(String((listed as { result?: unknown }).result)).toMatch(/old-one: "Old one"/)
+  expect(Object.keys(JSON.parse(files.get(SAVED) ?? '{}').dashboards)).toEqual(['old-one'])
 })
