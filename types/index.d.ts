@@ -32,9 +32,11 @@ export type SavedDashboard = { name: string; savedAt: string; dashboard: Dashboa
 // A command that prints a fresh { title?, subtitle?, components } as JSON on stdout.
 export type Refresh = { command: string[]; everySeconds: number }
 
-// Auto-refresh runs only the command the person approved by pressing Start.
+// Auto-refresh runs only the command the person approved by pressing Start, and only while the
+// code files in it (fingerprint: their sizes and modification times) stay as they were then.
 export type RefreshState = {
   approved: string | null
+  fingerprint: string | null
   lastRunAt: number
   lastError: string | null
   isRunning: boolean

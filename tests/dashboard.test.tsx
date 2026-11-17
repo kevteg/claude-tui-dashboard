@@ -311,3 +311,45 @@ test('the first read brings along dashboards saved in the old private store', as
   expect(String((listed as { result?: unknown }).result)).toMatch(/old-one: "Old one"/)
   expect(Object.keys(JSON.parse(files.get(SAVED) ?? '{}').dashboards)).toEqual(['old-one'])
 })
+
+test('when the refresh script changes after Start, the pane stops and asks for a new Start', async ($, on) => {
+  const ran: string[][] = []
+  on('process.run', (_: unknown, e: { argv: readonly string[] }) => {
+    ran.push([...e.argv])
+    return {
+      value: { exitCode: 0, stdout: '{"components": []}', stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+    }
+  })
+  let mtimeMs = 1_000
+  const statted: string[] = []
+  on('fs.stat', (_: unknown, e: { path: string }) => {
+    statted.push(e.path)
+    if (e.path === '/home/test/dash.py') return { value: { kind: 'file', size: 120, mtimeMs, isLink: false } }
+    if (e.path === '/usr/bin/python3') return { value: { kind: 'file', size: 9000, mtimeMs: 1, isLink: false } }
+    throw new Error(`ENOENT: ${e.path}`)
+  })
+  const clock = await start($, on)
+  await $.tool.call({
+    tool: 'mcp__tui-dashboard__render_dashboard',
+    title: 'Live',
+    components: [{ type: 'text', text: 'first frame' }],
+    refresh: { command: ['/usr/bin/python3', '/home/test/dash.py', '/var/log/app.log'], every_seconds: 60 },
+  })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'start-refresh' })
+  await clock.advance(10_000)
+  expect(ran).toHaveLength(1)
+  // The data file the script reads is not watched: it changes between runs by design.
+  expect(statted).not.toContain('/var/log/app.log')
+
+  mtimeMs = 2_000
+  await clock.advance(70_000)
+  expect(ran).toHaveLength(1)
+  expect(await ui.find({ type: 'Text', text: /every 60 s is off/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /changed since Start/ })).toBeTruthy()
+
+  await ui.press({ key: 'start-refresh' })
+  await clock.advance(10_000)
+  expect(ran).toHaveLength(2)
+  await ui.unmount()
+})

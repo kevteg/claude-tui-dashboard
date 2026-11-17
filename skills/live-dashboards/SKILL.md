@@ -21,8 +21,9 @@ exact command, so make the command short and obviously what it claims to be.
   and shows the last stderr line in the pane, so make that line useful.
 - **Timing:** runs at most once every `every_seconds`, never more often than once a minute, in
   the session's working directory, and is killed after 5 minutes.
-- **Approval:** changing the command needs a new Start. Calling `render_dashboard` again with the
-  same command keeps it running.
+- **Approval:** changing the command, or editing the program or script file it names, needs a new
+  Start. Calling `render_dashboard` again with the same command and unchanged files keeps it
+  running. So when you change a live dashboard's script, tell the person to press Start again.
 
 ## Writing a good one
 

@@ -63,9 +63,12 @@ The pane never runs a command on its own: it shows you the exact command and wai
 press **Start auto-refresh**. A different command needs a new Start, and **Stop** turns it off.
 The command runs on your machine as you, with your credentials.
 
-Approval is tied to the command, not to what the script contains: if the script file changes
-while auto-refresh is on, the next run uses the new version without asking. Keep refresh scripts
-somewhere only you write to.
+Approval also covers the code the command runs: when you press Start, the pane notes the size and
+modification time of the program and of any script file in the command (`.py`, `.js`, `.sh` and
+the like). If one of them changes, auto-refresh stops before the next run and asks you to press
+Start again. Data files the script reads are not watched, since they change between runs by
+design. Files the script imports are not watched either, so still keep refresh scripts somewhere
+only you write to.
 
 The plugin includes a `live-dashboards` skill that teaches Claude how to write a good refresh
 script: what to print, how often to run, and how to cache the expensive parts.
