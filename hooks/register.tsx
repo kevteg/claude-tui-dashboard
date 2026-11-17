@@ -855,8 +855,8 @@ export const register: Register = on => {
         case 'table': {
           const cells = c.rows.map(r => r.map(v => (typeof v === 'number' ? formatNumber(v) : v)))
           const isNumeric = c.columns.map((_, j) => c.rows.every(r => typeof r[j] === 'number'))
-          const natural = c.columns.map((h, j) =>
-            Math.max(h.length, ...cells.map(r => (r[j] ?? '').length)),
+          const natural = c.columns.map((heading, j) =>
+            Math.max(heading.length, ...cells.map(r => (r[j] ?? '').length)),
           )
           // Shrink the widest column until the table fits the pane.
           const widths = [...natural]
