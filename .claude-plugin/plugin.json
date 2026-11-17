@@ -2,8 +2,19 @@
   "name": "tui-dashboard",
   "version": "0.1.0",
   "description": "A dashboard pane beside the chat that Claude builds and updates with a render_dashboard tool",
-  "author": { "name": "kevteg" },
+  "author": {
+    "name": "kevteg"
+  },
   "license": "MIT",
   "repository": "https://github.com/kevteg/claude-tui-dashboard",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "homepage": "https://github.com/kevteg/claude-tui-dashboard",
+  "keywords": [
+    "dashboard",
+    "charts",
+    "terminal",
+    "tui",
+    "visualization",
+    "monitoring"
+  ]
 }

@@ -13,8 +13,8 @@ const dashboard = atom({ plugin: 'tui-dashboard', key: 'dashboard' } as const, n
 
 const refreshState = atom(
   { plugin: 'tui-dashboard', key: 'refresh' } as const,
-  { approved: null, lastRunAt: 0, lastError: null, isRunning: false } as RefreshState,
-  { shape: 'refresh-1' },
+  { approved: null, fingerprint: null, lastRunAt: 0, lastError: null, isRunning: false } as RefreshState,
+  { shape: 'refresh-2' },
 )
 const lastSaved = atom({ plugin: 'tui-dashboard', key: 'lastSaved' } as const, null, {
   shape: 'last-saved-1',
@@ -393,6 +393,42 @@ function commandKey(refresh: Refresh): string {
   return JSON.stringify(refresh.command)
 }
 
+// Files in the command that hold code: the program itself and any script it is given. Data files
+// the script reads are left out, since they change between runs by design.
+const SCRIPT_FILE = /\.(py|js|mjs|cjs|ts|mts|tsx|jsx|sh|bash|zsh|fish|rb|pl|php|lua|r|jl|ps1)$/i
+
+// Size and modification time of the command's code files, taken when the person presses Start.
+// If any of them changes, the approval lapses and the pane asks for a new Start.
+async function fingerprint($: EngineInterface, refresh: Refresh): Promise<string> {
+  const parts: string[] = []
+  for (const [index, arg] of refresh.command.entries()) {
+    if (index > 0 && !SCRIPT_FILE.test(arg)) continue
+    try {
+      const stat = (await $.fs.stat(arg, { resolve: true })) as {
+        kind?: string
+        size?: number
+        mtimeMs?: number
+        realPath?: string
+      }
+      if (stat.kind === 'file') parts.push(`${stat.realPath ?? arg}:${stat.size}:${stat.mtimeMs}`)
+    } catch {
+      // Not a file this plugin can see (a program found on PATH, a flag): nothing to watch.
+    }
+  }
+  return parts.join('\n')
+}
+
+async function approve($: EngineInterface, refresh: Refresh): Promise<void> {
+  const print = await fingerprint($, refresh)
+  await update($, refreshState, () => ({
+    approved: commandKey(refresh),
+    fingerprint: print,
+    lastRunAt: 0,
+    lastError: null,
+    isRunning: false,
+  }))
+}
+
 function clockTime(ms: number): string {
   return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })
 }
@@ -409,6 +445,17 @@ async function refreshIfDue($: EngineInterface): Promise<void> {
   if (!board || !r || state.approved !== commandKey(r) || state.isRunning) return
   const now = await $.clock.now()
   if (state.lastRunAt > 0 && now - state.lastRunAt < r.everySeconds * 1000) return
+
+  if ((await fingerprint($, r)) !== state.fingerprint) {
+    await update($, refreshState, s => ({
+      ...s,
+      approved: null,
+      fingerprint: null,
+      isRunning: false,
+      lastError: 'A file in the refresh command changed since Start. Check it, then press Start again.',
+    }))
+    return
+  }
 
   await update($, refreshState, s => ({ ...s, isRunning: true }))
   let error: string | null = null
@@ -599,11 +646,12 @@ export const register: Register = on => {
             <Text bold color="yellow">Auto-refresh every {r.everySeconds} s is off</Text>
             <Text dimColor>Pressing Start lets this pane run, on your machine, as you:</Text>
             <Text>{r.command.join(' ')}</Text>
+            {auto.lastError && <Text color="red">{fit(auto.lastError, 100)}</Text>}
             <Button
               key="start-refresh"
               variant="primary"
               onPress={() => {
-                void update($, refreshState, () => ({ approved: key, lastRunAt: 0, lastError: null, isRunning: false }))
+                void approve($, r)
               }}
             >
               Start auto-refresh
@@ -621,7 +669,7 @@ export const register: Register = on => {
           <Button
             key="stop-refresh"
             onPress={() => {
-              void update($, refreshState, s => ({ ...s, approved: null, isRunning: false }))
+              void update($, refreshState, s => ({ ...s, approved: null, fingerprint: null, lastError: null, isRunning: false }))
             }}
           >
             Stop

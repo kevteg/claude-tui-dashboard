@@ -1,5 +1,19 @@
 {
   "name": "claude-tui-dashboard",
-  "owner": { "name": "kevteg" },
-  "plugins": [{ "name": "tui-dashboard", "source": "./" }]
+  "owner": {
+    "name": "kevteg"
+  },
+  "metadata": {
+    "description": "Dashboards drawn in the terminal, beside the Claude Code chat",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "tui-dashboard",
+      "source": "./",
+      "description": "A dashboard pane beside the chat that Claude builds and updates with a render_dashboard tool: metrics, bar charts, pie charts, sparklines, tables and callouts",
+      "version": "0.1.0",
+      "category": "productivity"
+    }
+  ]
 }
