@@ -27,9 +27,6 @@ From a shell:
 claude plugin install tui-dashboard --marketplace kevteg/claude-tui-dashboard
 ```
 
-The repository is private for now. Installing needs read access to it on GitHub, and a git
-credential for github.com on your machine (an SSH key, or `gh auth login` then `gh auth setup-git`).
-
 ## Use
 
 - Ask Claude for a dashboard, e.g. "make me a dashboard of the errors in this log file by hour".
