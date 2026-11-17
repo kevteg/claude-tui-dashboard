@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { Component, Dashboard, Refresh, RefreshState, SavedDashboard, Series, Tone, Width } from '../types'
+import type { Component, Dashboard, PickerItem, Refresh, RefreshState, SavedDashboard, Series, Tone, Width } from '../types'
 
 const PANE = 'dashboard'
 const TOOL = 'render_dashboard'
@@ -19,6 +19,9 @@ const refreshState = atom(
 const lastSaved = atom({ plugin: 'tui-dashboard', key: 'lastSaved' } as const, null, {
   shape: 'last-saved-1',
 })
+// While set, the pane shows the saved-dashboards picker instead of the dashboard.
+const picker = atom({ plugin: 'tui-dashboard', key: 'picker' } as const, null, { shape: 'picker-1' })
+
 // Saved dashboards live in one ordinary file, so every copy of the plugin (installed from any
 // marketplace, or loaded from a folder while developing) sees the same list, and a person can copy
 // or share it. Before this they were in $.store, which is private to each install.
@@ -367,8 +370,24 @@ async function deleteSaved($: EngineInterface, name: string): Promise<boolean> {
   return true
 }
 
+// Shows the saved dashboards in the pane as a list to move through with the arrow keys.
+async function openPicker($: EngineInterface): Promise<number> {
+  const all = await savedList($)
+  if (all.length === 0) return 0
+  const items: PickerItem[] = all.map(s => ({
+    name: s.name,
+    title: s.dashboard.title,
+    savedAt: s.savedAt,
+    isLive: !!s.dashboard.refresh,
+  }))
+  await update($, picker, () => items)
+  await $.ui.open({ id: PANE, title: 'Saved dashboards', focus: true }).catch(() => undefined)
+  return all.length
+}
+
 // Puts a saved dashboard back in the pane. Its refresh command still needs a Start in this session.
 async function restore($: EngineInterface, saved: SavedDashboard): Promise<void> {
+  await update($, picker, () => null)
   await update($, dashboard, () => ({ ...saved.dashboard, updatedAt: `saved ${saved.savedAt}` }))
   await $.ui
     .open({
@@ -529,10 +548,10 @@ export const register: Register = on => {
   on('command.run', { command: 'tui-dashboard' }, async ($, e) => {
     const [verb = '', ...rest] = e.args.trim().split(/\s+/).filter(Boolean)
     if (verb === 'list') {
-      const all = await savedList($)
+      const count = await openPicker($)
       return {
-        text: all.length
-          ? all.map(describeSaved).join('\n')
+        text: count
+          ? `${count} saved dashboard${count === 1 ? '' : 's'} in the pane: ↑/↓ to move, Enter to open, Esc to go back to the prompt.`
           : 'No saved dashboards yet. Press Save in the dashboard pane to keep one.',
       }
     }
@@ -622,10 +641,45 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
-    const { Button } = $.ui.resolve(e)
+    const { Button, Select } = $.ui.resolve(e)
     const board = await read($, dashboard)
     const auto = await read($, refreshState)
     const saved = await read($, lastSaved)
+    const picking = await read($, picker)
+
+    if (picking) {
+      return (
+        <Box flexDirection="column" rowGap={1}>
+          <Box flexDirection="column">
+            <Text bold>Saved dashboards</Text>
+            <Text dimColor>↑/↓ to move · Enter opens it · Esc goes back to the prompt</Text>
+          </Box>
+          <Select
+            key="saved-picker"
+            autoFocus
+            options={picking.map(item => ({
+              value: item.name,
+              label: `${item.title}  ·  saved ${item.savedAt}${item.isLive ? '  ·  live' : ''}`,
+            }))}
+            onSelect={name => {
+              void savedNamed($, name)
+                .then(found => (found ? restore($, found) : $.ui.toast(`"${name}" is no longer saved.`)))
+                .catch((error: unknown) => $.ui.toast(`Could not open it: ${String(error)}`))
+            }}
+          />
+          {board && (
+            <Button
+              key="close-picker"
+              onPress={() => {
+                void update($, picker, () => null)
+              }}
+            >
+              Back to the dashboard
+            </Button>
+          )}
+        </Box>
+      )
+    }
     const props = e.props as { bodyColumns?: number }
     const columns = e.viewport?.columns ?? props.bodyColumns ?? 60
 
@@ -634,6 +688,16 @@ export const register: Register = on => {
         <Box flexDirection="column">
           <Text dimColor>No dashboard yet.</Text>
           <Text dimColor>Ask Claude for one, e.g. "make me a dashboard of …".</Text>
+          <Button
+            key="open-saved"
+            onPress={() => {
+              void openPicker($).then(count => {
+                if (!count) $.ui.toast('No saved dashboards yet.')
+              })
+            }}
+          >
+            Saved…
+          </Button>
         </Box>
       )
     }
@@ -895,6 +959,16 @@ export const register: Register = on => {
               }}
             >
               Save
+            </Button>
+            <Button
+              key="open-saved"
+              onPress={() => {
+                void openPicker($).then(count => {
+                  if (!count) $.ui.toast('No saved dashboards yet.')
+                })
+              }}
+            >
+              Saved…
             </Button>
             {saved && saved.name === slug(board.title) && <Text dimColor>saved as {saved.name}, {saved.at}</Text>}
           </Box>

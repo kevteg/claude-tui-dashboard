@@ -26,6 +26,9 @@ export type Dashboard = {
   updatedAt: string
 }
 
+// One row of the saved-dashboards picker.
+export type PickerItem = { name: string; title: string; savedAt: string; isLive: boolean }
+
 // What the Save button stores, under `saved:<name>` in the plugin's store.
 export type SavedDashboard = { name: string; savedAt: string; dashboard: Dashboard }
 
@@ -48,6 +51,7 @@ declare module 'claude-code' {
       dashboard: Shaped<Dashboard | null>
       refresh: Shaped<RefreshState>
       lastSaved: Shaped<{ name: string; at: string } | null>
+      picker: Shaped<PickerItem[] | null>
     }
   }
 }

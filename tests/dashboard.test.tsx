@@ -36,6 +36,11 @@ function memoryFs(on: any): Map<string, string> {
   return files
 }
 
+// The harness fills in a command run's origin and presentation, so tests pass only what they set.
+function runCommand($: any, args: string): Promise<unknown> {
+  return $.command.run({ command: 'tui-dashboard', args })
+}
+
 async function start($: any, on: any, store?: Record<string, unknown>) {
   const clock = mock.clock(on)
   mock.store(on, store)
@@ -352,4 +357,35 @@ test('when the refresh script changes after Start, the pane stops and asks for a
   await clock.advance(10_000)
   expect(ran).toHaveLength(2)
   await ui.unmount()
+})
+
+test('/tui-dashboard list opens a picker, and picking one opens that dashboard', async ($, on) => {
+  await start($, on)
+  for (const title of ['Orders Today', 'Signups']) {
+    await $.tool.call({
+      tool: 'mcp__tui-dashboard__render_dashboard',
+      title,
+      components: [{ type: 'metrics', items: [{ label: title, value: title.length.toString() }] }],
+    })
+    const ui = await $.ui.mount(PANE)
+    await ui.press({ key: 'save-dashboard' })
+    await ui.unmount()
+  }
+
+  const listed = await runCommand($, 'list')
+  expect(String((listed as { text?: unknown }).text)).toMatch(/2 saved dashboards in the pane/)
+
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: 'Saved dashboards' })).toBeTruthy()
+  await ui.select({ key: 'saved-picker', value: 'orders-today' })
+  expect(await ui.find({ type: 'Text', text: 'Orders Today' })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: 'Saved dashboards' })).toBeFalsy()
+  await ui.unmount()
+})
+
+test('/tui-dashboard list with nothing saved says so', async ($, on) => {
+  await start($, on)
+  const listed = await runCommand($, 'list')
+
+  expect(String((listed as { text?: unknown }).text)).toMatch(/No saved dashboards yet/)
 })

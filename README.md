@@ -79,7 +79,9 @@ Press **Save** next to the dashboard's title to keep it, with its refresh comman
 notes on how the data was gathered. Bring it back in any later session:
 
 - `/tui-dashboard <name>` puts it back in the pane right away, no Claude needed
-- `/tui-dashboard list` shows what you saved, and `/tui-dashboard delete <name>` removes one
+- `/tui-dashboard list` (or the **Saved…** button in the pane) shows your saved dashboards as a
+  list: ↑/↓ to move, Enter to open one, Esc to go back to the prompt
+- `/tui-dashboard delete <name>` removes one
 - Or ask Claude: it can list and open saved dashboards, and uses those notes to update them
 
 A saved refresh command still waits for you to press Start in each new session.
@@ -107,19 +109,18 @@ Claude writes a small refresh script, runs it once, and draws the dashboard. In 
 **Tomorrow**, in a brand-new session (`claude` in a new terminal, or `/clear`), there are two ways
 back.
 
-Without Claude doing anything:
+Without Claude doing anything, type `/tui-dashboard list`. The pane lists what you saved:
 
 ```
-> /tui-dashboard list
-app-log-errors-per-hour: "App log errors per hour", saved Nov 12, 7:15 PM, 4 components
-  refresh every 300 s: /Users/me/.local/bin/uv run --script /Users/me/claude-dashboards/app_errors.py
-  recipe: Counts ERROR lines in /var/log/myapp/app.log per hour; ...
+Saved dashboards
+↑/↓ to move · Enter opens it · Esc goes back to the prompt
 
-> /tui-dashboard app-log-errors-per-hour
-Opened "App log errors per hour", saved Nov 12, 7:15 PM.
+❯ App log errors per hour  ·  saved Nov 12, 7:15 PM  ·  live
+  Signups this week  ·  saved Nov 10, 9:02 AM
 ```
 
-The pane shows the dashboard as you saved it. Press **Start auto-refresh** again and it is live.
+Press Enter on one, or type its name directly: `/tui-dashboard app-log-errors-per-hour`. The pane
+shows the dashboard as you saved it. Press **Start auto-refresh** again and it is live.
 
 Or ask Claude, when you want something changed too:
 
